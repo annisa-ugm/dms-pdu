@@ -5,133 +5,197 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\File;
+use App\Http\Requests\StoreFileRequest;
+use App\Http\Requests\StoreFolderRequest;
 use App\Http\Resources\FileResource;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Exception;
 
 class FileController extends Controller
 {
     public function myFiles(Request $request, string $folder = null)
     {
-        $search = $request->get('search');
+        try {
+            $search = $request->get('search');
 
-        if ($folder) {
-            $folder = File::query()
+            if ($folder) {
+                $folder = File::query()
+                    ->where('created_by', Auth::id())
+                    ->where('path', $folder)
+                    ->firstOrFail();
+            }
+            if (!$folder) {
+                $folder = $this->getRoot();
+            }
+
+            $query = File::query()
+                ->select('files.*')
                 ->where('created_by', Auth::id())
-                ->where('path', $folder)
-                ->firstOrFail();
+                ->where('_lft', '!=', 1)
+                ->orderBy('is_folder', 'desc')
+                ->orderBy('files.created_at', 'desc')
+                ->orderBy('files.id', 'desc');
+
+            if ($search) {
+                $query->where('name', 'like', "%$search%");
+            } else {
+                $query->where('parent_id', $folder->id);
+            }
+
+            $files = $query->paginate(10);
+            $files = FileResource::collection($files);
+
+            $ancestors = FileResource::collection([...$folder->ancestors, $folder]);
+            $folder = new FileResource($folder);
+
+            return response()->json([
+                'files'     => $files,
+                'folder'    => $folder,
+                'ancestors' => $ancestors,
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'Failed to fetch files',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-        if (!$folder) {
-            $folder = $this->getRoot();
-        }
-
-        $query = File::query()
-            ->select('files.*')
-            // ->with('starred')
-            ->where('created_by', Auth::id())
-            ->where('_lft', '!=', 1)
-            ->orderBy('is_folder', 'desc')
-            ->orderBy('files.created_at', 'desc')
-            ->orderBy('files.id', 'desc');
-
-        if ($search) {
-            $query->where('name', 'like', "%$search%");
-        } else {
-            $query->where('parent_id', $folder->id);
-        }
-
-        $files = $query->paginate(10);
-
-        $files = FileResource::collection($files);
-
-        if ($request->wantsJson()) {
-            return $files;
-        }
-
-        $ancestors = FileResource::collection([...$folder->ancestors, $folder]);
-
-        $folder = new FileResource($folder);
-
-        return response()->json([
-            'files' => $files,
-            'folder' => $folder,
-            'ancestors' => $ancestors,
-        ]);
-
     }
 
     public function createFolder(StoreFolderRequest $request)
     {
-        $data = $request->validated();
-        $parent = $request->parent;
+        try {
+            $data = $request->validated();
+            $parent = $request->parent ?? $this->getRoot();
 
-        if (!$parent) {
-            $parent = $this->getRoot();
+            $exists = File::where('parent_id', $parent->id)
+                ->where('name', $data['name'])
+                ->where('is_folder', 1)
+                ->whereNull('deleted_at')
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'name' => ["Folder \"{$data['name']}\" already exists in this directory."],
+                ]);
+            }
+
+            $file = new File();
+            $file->is_folder = 1;
+            $file->name = $data['name'];
+            $parent->appendNode($file);
+
+            return response()->json([
+                'message' => 'Folder created successfully',
+                'folder'  => new FileResource($file)
+            ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create folder',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-
-        $file = new File();
-        $file->is_folder = 1;
-        $file->name = $data['name'];
-
-        $parent->appendNode($file);
     }
 
     public function store(StoreFileRequest $request)
     {
-        $data = $request->validated();
-        $parent = $request->parent;
-        $user = $request->user();
-        $fileTree = $request->file_tree;
+        try {
+            $data = $request->validated();
+            $parent = $request->parent ?? $this->getRoot();
+            $user   = $request->user();
+            $fileTree = $request->file_tree;
 
-        if (!$parent) {
-            $parent = $this->getRoot();
-        }
-
-        if (!empty($fileTree)) {
-            $this->saveFileTree($fileTree, $parent, $user);
-        } else {
-            foreach ($data['files'] as $file) {
-                /** @var \Illuminate\Http\UploadedFile $file */
-
-                $this->saveFile($file, $user, $parent);
+            if (!empty($fileTree)) {
+                $this->saveFileTree($fileTree, $parent, $user);
+            } else {
+                foreach ($data['files'] as $file) {
+                    $this->saveFile($file, $user, $parent);
+                }
             }
+
+            return response()->json([
+                'message' => 'Files uploaded successfully',
+                'parent'  => new FileResource($parent),
+            ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'Failed to upload files',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
     }
 
     private function getRoot()
     {
-        return File::query()->whereIsRoot()->where('created_by', Auth::id())->firstOrFail();
+        return File::query()
+            ->whereIsRoot()
+            ->where('created_by', Auth::id())
+            ->firstOrFail();
     }
 
     public function saveFileTree($fileTree, $parent, $user)
     {
         foreach ($fileTree as $name => $file) {
-            if (is_array($file)) {
+            if ($file instanceof \Illuminate\Http\UploadedFile) {
+                $this->saveFile($file, $user, $parent);
+            } elseif (is_array($file)) {
+                $existing = File::where('parent_id', $parent->id)
+                    ->where('name', $name)
+                    ->where('is_folder', 1)
+                    ->whereNull('deleted_at')
+                    ->first();
+
+                if ($existing) {
+                    throw ValidationException::withMessages([
+                        'name' => ["Folder \"$name\" already exists in this directory."]
+                    ]);
+                }
+
                 $folder = new File();
                 $folder->is_folder = 1;
                 $folder->name = $name;
-
                 $parent->appendNode($folder);
-                $this->saveFileTree($file, $folder, $user);
-            } else {
 
-                $this->saveFile($file, $user, $parent);
+                $this->saveFileTree($file, $folder, $user);
             }
         }
     }
 
     private function saveFile($file, $user, $parent): void
     {
-        $path = $file->store('/files/' . $user->id, 'local');
+        $name = $file->getClientOriginalName();
+
+        $existing = File::where('parent_id', $parent->id)
+            ->where('name', $name)
+            ->where('is_folder', 0)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if ($existing) {
+            throw ValidationException::withMessages([
+                'files' => ["File \"$name\" already exists in this directory."]
+            ]);
+        }
+
+        $path = $file->store('/files/' . $user->id, 'public');
 
         $model = new File();
         $model->storage_path = $path;
         $model->is_folder = false;
-        $model->name = $file->getClientOriginalName();
+        $model->name = $name;
         $model->mime = $file->getMimeType();
         $model->size = $file->getSize();
-        $model->uploaded_on_cloud = 0;
 
         $parent->appendNode($model);
-
-        UploadFileToCloudJob::dispatch($model);
     }
 }
