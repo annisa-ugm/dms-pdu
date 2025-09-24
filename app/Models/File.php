@@ -113,4 +113,11 @@ class File extends Model
 //        });
     }
 
+    public function shares()
+    {
+        return $this->belongsToMany(User::class, 'shareables', 'file_id', 'user_id')
+            ->withPivot('permission_id')
+            ->withTimestamps();
+    }
+
 }

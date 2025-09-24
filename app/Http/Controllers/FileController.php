@@ -11,12 +11,18 @@ use App\Http\Resources\FileResource;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Exception;
+use Illuminate\Support\Facades\Log;
 
 class FileController extends Controller
 {
     public function myFiles(Request $request, string $folder = null)
     {
         try {
+            Log::info('Authenticated User ID: ' . Auth::id());
+            if (!Auth::check()) {
+                return response()->json(['message' => 'Unauthenticated'], 401);
+            }
+
             $search = $request->get('search');
 
             if ($folder) {

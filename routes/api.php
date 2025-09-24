@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\ShareController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -18,6 +19,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-files/{folder?}', [FileController::class, 'myFiles'])->where('folder', '.*');
     Route::post('/create-folder', [FileController::class, 'createFolder']);
     Route::post('/upload-files', [FileController::class, 'store']);
+    Route::post('/share-file/{file}', [ShareController::class, 'store']);
 });
 
 Route::get('email/verify/{id}/{hash}', [UserController::class, 'verifyEmail'])
