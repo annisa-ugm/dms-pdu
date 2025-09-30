@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\File;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -18,27 +19,34 @@ class ShareController extends Controller
             }
 
             $validated = $request->validate([
-                'user_id' => 'required|exists:users,id',
                 'permission_id' => 'required|exists:permissions,id',
                 'file_id' => 'required|exists:files,id',
             ]);
 
+            $user = User::where('email', $request->email)->firstOrFail();
+            $user_id = $user->id;
+
             $existingShare = $file->shares()
-                ->where('user_id', $validated['user_id'])
-                ->where('permission_id', $validated['permission_id'])
+                ->wherePivot('user_id', $user_id)
+                ->wherePivot('permission_id', $validated['permission_id'])
                 ->first();
 
             if ($existingShare) {
-                $existingShare->pivot->update([
-                    'permission_id' => $validated['permission_id'],
-                    'created_by' => Auth::id(),
-                ]);
+                $file->shares()->updateExistingPivot(
+                    $user_id,
+                    [
+                        'permission_id' => $validated['permission_id'],
+                        'created_by' => Auth::id(),
+                    ],
+                );
             } else {
                 $file->shares()->attach(
-                    $validated['user_id'],
-                    ['permission_id' => $validated['permission_id'],
-                    'created_by' => Auth::id()
-                ]);
+                    $user_id,
+                    [
+                        'permission_id' => $validated['permission_id'],
+                        'created_by' => Auth::id(),
+                    ]
+                );
             }
 
             return response()->json([
