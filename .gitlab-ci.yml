@@ -37,7 +37,6 @@ unit_test_app:
   stage: test
   only:
     - main
-    - development
   image: laravelsail/php82-composer:latest
   services:
     - mysql:latest
@@ -46,7 +45,8 @@ unit_test_app:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   script:
     - apt-get update 
-    - apt-get install unzip default-mysql-client -y
+    - apt-get install -y unzip default-mysql-client libpng-dev libzip-dev libonig-dev libxml2-dev
+    - docker-php-ext-install pdo_mysql
     - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     - composer require --dev phpunit/phpunit
     - composer install
@@ -69,8 +69,10 @@ deploy_to_vps:
 
     # Setup SSH
     - mkdir -p ~/.ssh
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
     - chmod 600 ~/.ssh/id_rsa
+    - eval $(ssh-agent -s)
+    - ssh-add ~/.ssh/id_rsa
     - ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
 
     # Rsync project ke VPS
