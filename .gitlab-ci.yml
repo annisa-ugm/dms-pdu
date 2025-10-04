@@ -80,14 +80,11 @@ deploy_to_vps:
     - ssh-add ~/.ssh/id_rsa
     - ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
 
-    # Rsync project ke VPS
-    - echo "Uploading project to VPS..."
-    - rsync -avz --delete --exclude=".git" --exclude="storage" --exclude="vendor" --exclude=".env" ./ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH
-
-
-    - echo "Running remote deployment steps..."
     - ssh $DEPLOY_USER@$DEPLOY_HOST "
         cd $DEPLOY_PATH &&
+        echo 'Pulling latest code...' &&
+        git fetch origin main &&
+        git reset --hard origin/main &&
         echo 'Creating DB backup...' &&
         mkdir -p storage/backups &&
         mysqldump -u$MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE > storage/backups/db_backup_$(date +%F_%H-%M-%S).sql &&
