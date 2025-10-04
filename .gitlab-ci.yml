@@ -11,7 +11,7 @@ cache:
 variables:
   DEPLOY_USER: $USER
   DEPLOY_HOST: $HOST
-  DEPLOY_PATH: /var/www/yourproject
+  DEPLOY_PATH: /var/www/dms-pdu
   BRANCH_DEPLOY: main
   MYSQL_DATABASE: $DBNAME
   MYSQL_USER: $DBUSER
@@ -62,9 +62,10 @@ deploy_to_vps:
   stage: deploy
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_COMMIT_BRANCH == "main"'
-      when: on_success
+      when: manual
     - if: '$CI_COMMIT_BRANCH == "main"'
-      when: on_success
+      when: manual
+    - when: never
 
   before_script:
     - echo "Starting deployment to VPS..."
@@ -102,5 +103,4 @@ deploy_to_vps:
     name: production
     url: http://$DEPLOY_HOST
   
-  when: manual
 
