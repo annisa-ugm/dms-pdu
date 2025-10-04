@@ -65,7 +65,6 @@ deploy_to_vps:
       when: on_success
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: on_success
-    - when: manual
 
   before_script:
     - echo "Starting deployment to VPS..."
@@ -102,3 +101,6 @@ deploy_to_vps:
   environment:
     name: production
     url: http://$DEPLOY_HOST
+  
+  when: manual
+
