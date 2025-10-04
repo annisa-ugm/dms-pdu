@@ -82,7 +82,8 @@ deploy_to_vps:
 
     # Rsync project ke VPS
     - echo "Uploading project to VPS..."
-    - rsync -avz --delete --exclude=".git" --exclude="storage" --exclude="vendor" ./ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH
+    - rsync -avz --delete --exclude=".git" --exclude="storage" --exclude="vendor" --exclude=".env" ./ $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH
+
 
     - echo "Running remote deployment steps..."
     - ssh $DEPLOY_USER@$DEPLOY_HOST "
