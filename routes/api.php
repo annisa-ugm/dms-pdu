@@ -17,9 +17,12 @@ Route::post('/logout-user', [UserController::class, 'logout'])->middleware('auth
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-files/{folder?}', [FileController::class, 'myFiles'])->where('folder', '.*');
+    Route::get('/trash', [FileController::class, 'trash']);
     Route::post('/create-folder', [FileController::class, 'createFolder']);
     Route::post('/upload-files', [FileController::class, 'store']);
+    Route::delete('/delete-file', [FileController::class, 'destroy']);
     Route::post('/share-file/{file}', [ShareController::class, 'store']);
+    Route::post('/restore-file', [FileController::class, 'restore']);
 });
 
 Route::get('email/verify/{id}/{hash}', [UserController::class, 'verifyEmail'])

@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Http\Requests\FilesActionRequest;
+use App\Http\Requests\TrashFilesRequest;
 use Illuminate\Support\Facades\Auth;
 use App\Models\File;
 use App\Http\Requests\StoreFileRequest;
 use App\Http\Requests\StoreFolderRequest;
 use App\Http\Resources\FileResource;
+use App\Jobs\UploadFileToCloudJob;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use App\Helpers\FileHelper;
 use Exception;
 use Illuminate\Support\Facades\Log;
 
@@ -67,6 +71,26 @@ class FileController extends Controller
             ], 500);
         }
     }
+
+    public function trash(Request $request)
+    {
+        $search = $request->get('search');
+
+        $query = File::onlyTrashed()
+            ->where('created_by', Auth::id())
+            ->orderBy('is_folder', 'desc')
+            ->orderBy('deleted_at', 'desc')
+            ->orderBy('files.id', 'desc');
+
+        if ($search) {
+            $query->where('name', 'like', "%{$search}%");
+        }
+
+        $files = $query->paginate(10);
+
+        return FileResource::collection($files);
+    }
+
 
     public function createFolder(StoreFolderRequest $request)
     {
@@ -193,15 +217,93 @@ class FileController extends Controller
             ]);
         }
 
-        $path = $file->store('/files/' . $user->id, 'public');
+        $path = $file->store('/files/' . $user->id, 'local');
 
         $model = new File();
         $model->storage_path = $path;
         $model->is_folder = false;
-        $model->name = $name;
+        $model->name = $file->getClientOriginalName();
         $model->mime = $file->getMimeType();
         $model->size = $file->getSize();
+        $model->uploaded_on_cloud = 0;
 
         $parent->appendNode($model);
+
+        // UploadFileToCloudJob::dispatch($model);
     }
+
+    public function destroy(FilesActionRequest $request)
+    {
+        $data = $request->validated();
+        $parent = $request->parent;
+
+        if ($data['all']) {
+            $children = $parent->children;
+            foreach ($children as $child) {
+                $child->moveToTrashWithDescendants();
+            }
+        } else {
+            foreach ($data['ids'] ?? [] as $id) {
+                $file = File::find($id);
+                if ($file) {
+                    $file->moveToTrashWithDescendants();
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s)/folder(s) moved to trash successfully.',
+        ]);
+    }
+
+    public function restore(TrashFilesRequest $request)
+    {
+        $data = $request->validated();
+
+        if ($data['all']) {
+            $children = File::onlyTrashed()
+                ->with('parent')
+                ->where('created_by', Auth::id())
+                ->get();
+        } else {
+            $ids = $data['ids'] ?? [];
+
+            $children = File::onlyTrashed()
+                ->with('parent')
+                ->whereIn('id', $ids)
+                ->where('created_by', Auth::id())
+                ->get();
+
+        foreach ($children as $child) {
+            // restore parent chain
+            $parent = $child->parent;
+            while ($parent && $parent->trashed()) {
+                $parent->restore();
+                $parent = $parent->parent;
+            }
+
+            // cek & generate nama unik sebelum restore
+            $child->name = FileHelper::generateUniqueName(
+                $child->name,
+                $child->parent_id,
+                Auth::id()
+            );
+
+            $child->restore();
+
+            if ($child->is_folder) {
+                File::onlyTrashed()
+                    ->whereDescendantOf($child)
+                    ->update(['deleted_at' => null]);
+            }
+        }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'File(s) restored successfully.',
+        ]);
+    }
+
 }
