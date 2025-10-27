@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Laravel\Pail\ValueObjects\Origin\Console;
 use Ramsey\Uuid\Type\Integer;
 use Spatie\Permission\Models\Permission;
 
@@ -123,13 +124,19 @@ class ShareController extends Controller
      * Store a newly created resource in storage.
      */
 
-    public function store(Request $request, File $file){
+    public function store(Request $request, $id){
         try {
+            Log::info('ShareController@store called by user ID: ' . Auth::id());
+
+            $file = File::find($id);
+            Log::info('File to be shared ID: ' . $file);
+
+
             if (Auth::id() !== $file->created_by) {
-            return response()->json([
-                'success' => false,
-                'message' => 'You do not have permission to share this file.',
-            ], 403);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to share this file.',
+                ], 403);
             }
 
             if (!Auth::check()) {
@@ -256,5 +263,5 @@ class ShareController extends Controller
         }
     }
 
-    
+
 }
