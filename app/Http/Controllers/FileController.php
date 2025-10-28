@@ -236,6 +236,11 @@ class FileController extends Controller
 
         $parent->appendNode($model);
 
+        if (request()->has('labels')) {
+            $labels = request()->input('labels');
+            $model->labels()->sync($labels);
+        }
+
         // UploadFileToCloudJob::dispatch($model);
     }
 
