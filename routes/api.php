@@ -4,9 +4,14 @@ use App\Http\Controllers\LabelController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\ShareController;
+use App\Models\Shareable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Contracts\Role;
+
+// Route::get('/csrf-cookie', function () {
+//     return response()->json(['message' => 'CSRF cookie set']);
+// });
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -24,6 +29,8 @@ Route::post('/login-user', [UserController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/update-profile', [UserController::class, 'updateUserProfile']);
     Route::post('/logout-user', [UserController::class, 'logout']);
+    Route::post('/change-password', [UserController::class, 'changePassword']);
+    Route::post('/delete-photo-profile', [UserController::class, 'deletePhotoProfile']);
 
     Route::get('/my-files/{folderId?}', [FileController::class, 'myFiles'])->whereNumber('folderId');
     Route::get('/trash', [FileController::class, 'trash']);
@@ -63,3 +70,5 @@ Route::post('/forgot-password', [UserController::class, 'sendResetToken']);
 Route::post('/verify-token', [UserController::class, 'verifyToken']);
 Route::post('/reset-password', [UserController::class, 'resetPassword']);
 
+Route::get('/share/{token}', [ShareController::class, 'accessSharedFile'])
+    ->name('file.share');
