@@ -642,7 +642,7 @@ class FileController extends Controller
                 ->where(function ($query) {
                     $query->where('created_by', Auth::id())
                           ->orWhereHas('shareables', function ($q) {
-                              $q->where('user_id', Auth::id());
+                              $q->where('shared_to', Auth::id());
                           });
                 })
                 ->with(['labels', 'shareables.user', 'shareables.permission', 'user'])

@@ -28,7 +28,7 @@ class FilesActionRequest extends ParentIdBaseRequest
                         ->where(function ($query) {
                             /** @var $query \Illuminate\Database\Query\Builder */
                             $query->where('files.created_by', Auth::id())
-                                ->orWhere('shareables.user_id', Auth::id());
+                                ->orWhere('shareables.shared_to', Auth::id());
                         })
                         ->first();
 
