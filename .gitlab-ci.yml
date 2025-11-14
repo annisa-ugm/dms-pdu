@@ -57,7 +57,7 @@ unit_test_app:
     - sed -i 's/DB_DATABASE=.*/DB_DATABASE=test_db/' .env 
     - sed -i 's/DB_USERNAME=.*/DB_USERNAME=root/' .env 
     - sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=/' .env 
-    - php5 artisan key:generate 
+    - php artisan key:generate 
     - php artisan config:cache 
     - until mysqladmin ping -h mysql --silent; do sleep 1; done
     - php artisan migrate:fresh --seed   
