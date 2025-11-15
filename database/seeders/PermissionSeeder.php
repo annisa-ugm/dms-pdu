@@ -35,7 +35,7 @@ class PermissionSeeder extends Seeder
         Permission::create(['name' => 'assign-admin']);
         Permission::create(['name' => 'assign-permission']);
 
-        $roleSuperAdmin = Role::findByName('superAdmin');
+        $roleSuperAdmin = Role::findByName('superAdmin', 'api');
         $roleSuperAdmin -> givePermissionTo('create-file');
         $roleSuperAdmin -> givePermissionTo('edit-file');
         $roleSuperAdmin -> givePermissionTo('delete-file');
@@ -47,7 +47,7 @@ class PermissionSeeder extends Seeder
         $roleSuperAdmin -> givePermissionTo('assign-admin');
         $roleSuperAdmin -> givePermissionTo('assign-permission');
 
-        $roleAdmin = Role::findByName('admin');
+        $roleAdmin = Role::findByName('admin', 'api');
         $roleAdmin -> givePermissionTo('create-file');
         $roleAdmin -> givePermissionTo('edit-file');
         $roleAdmin -> givePermissionTo('delete-file');
@@ -57,7 +57,7 @@ class PermissionSeeder extends Seeder
         $roleAdmin -> givePermissionTo('edit-label');
         $roleAdmin -> givePermissionTo('delete-label');
 
-        $roleGuest = Role::findByName('guest');
+        $roleGuest = Role::findByName('guest', 'api');
         $roleGuest -> givePermissionTo('view-file');
 
     }
