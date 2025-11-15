@@ -15,9 +15,9 @@ class PermissionSeeder extends Seeder
     public function run(): void
     {
         # Roles
-        Role::create(['name' => 'superAdmin']);
-        Role::create(['name' => 'admin']);
-        Role::create(['name' => 'guest']);
+        Role::create(['name' => 'superAdmin', 'guard_name' => 'api']);
+        Role::create(['name' => 'admin', 'guard_name' => 'api']);
+        Role::create(['name' => 'guest', 'guard_name' => 'api']);
 
         # Permission - Files
         Permission::create(['name' => 'create-file']);
