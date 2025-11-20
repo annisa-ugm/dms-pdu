@@ -17,6 +17,7 @@ use App\Http\Requests\ForceDeleteFilesRequest;
 use App\Http\Requests\StoreFileRequest;
 use App\Http\Requests\StoreFolderRequest;
 use App\Http\Requests\UpdateFileRequest;
+use App\Http\Requests\DuplicateFileRequest;
 use App\Http\Resources\FileResource;
 use App\Models\File;
 use App\Models\FileAccessLog;
@@ -63,7 +64,7 @@ class FileController extends Controller
                 $query->where('parent_id', $folder->id);
             }
 
-            $files = $query->paginate(10);
+            $files = $query->get();
             $files = FileResource::collection($files);
 
             $ancestors = FileResource::collection([...$folder->ancestors, $folder]);
@@ -150,17 +151,24 @@ class FileController extends Controller
             $user   = $request->user();
             $fileTree = $request->file_tree;
 
+            $uploadedFiles = [];
+
             if (!empty($fileTree)) {
-                $this->saveFileTree($fileTree, $parent, $user);
+                $uploadedFiles = $this->saveFileTree($fileTree, $parent, $user);
             } else {
                 foreach ($data['files'] as $file) {
-                    $this->saveFile($file, $user, $parent);
+                    $uploadedFile = $this->saveFile($file, $user, $parent);
+                    $uploadedFiles[] = $uploadedFile;
                 }
             }
 
+            $uploadedFileIds = collect($uploadedFiles)->pluck('id')->toArray();
+            $uploadedFilesWithLabels = File::whereIn('id', $uploadedFileIds)->with('labels')->get();
+
             return response()->json([
                 'message' => 'Files uploaded successfully',
-                'parent'  => new FileResource($parent),
+                'files'  => FileResource::collection($uploadedFilesWithLabels),
+                'parent' => new FileResource($parent),
             ], 201);
         } catch (ValidationException $e) {
             return response()->json([
@@ -185,24 +193,31 @@ class FileController extends Controller
 
     public function saveFileTree($fileTree, $parent, $user)
     {
+        $uploadedFiles = [];
+
         foreach ($fileTree as $name => $file) {
             if ($file instanceof \Illuminate\Http\UploadedFile) {
-                $this->saveFile($file, $user, $parent);
+                $uploadedFile = $this->saveFile($file, $user, $parent);
+                $uploadedFiles[] = $uploadedFile;
             } elseif (is_array($file)) {
                 $uniqueName = FileHelper::generateUniqueName($name, $parent->id, $user->id, true);
 
                 $folder = new File();
                 $folder->is_folder = 1;
                 $folder->name = $uniqueName;
-                $file->path = Str::slug($uniqueName);
+                $folder->path = Str::slug($uniqueName);
                 $parent->appendNode($folder);
 
-                $this->saveFileTree($file, $folder, $user);
+                $uploadedFiles[] = $folder;
+
+                $childFiles = $this->saveFileTree($file, $folder, $user);
+                $uploadedFiles = array_merge($uploadedFiles, $childFiles);
             }
         }
+        return $uploadedFiles;
     }
 
-    private function saveFile($file, $user, $parent): void
+    private function saveFile($file, $user, $parent): File
     {
         $name = $file->getClientOriginalName();
         $uniqueName = FileHelper::generateUniqueName($name, $parent->id, $user->id);
@@ -227,6 +242,8 @@ class FileController extends Controller
             $labels = request()->input('labels');
             $model->labels()->sync($labels);
         }
+
+        return $model;
     }
 
     public function update(UpdateFileRequest $request, string $fileId)
@@ -668,7 +685,7 @@ class FileController extends Controller
         }
     }
 
-    public function getDashboardData()
+    public function lastOpenedFiles()
     {
         $userId = Auth::id();
 
@@ -690,6 +707,16 @@ class FileController extends Controller
         $lastOpenedFolders = $lastOpenedLogs->where('is_folder', true)->take(6);
         $lastOpenedFiles = $lastOpenedLogs->where('is_folder', false)->take(6);
 
+        return response()->json([
+            'last_opened_folders' => FileResource::collection($lastOpenedFolders),
+            'last_opened_files'   => FileResource::collection($lastOpenedFiles),
+        ]);
+    }
+
+    public function recommendedFiles()
+    {
+        $userId = Auth::id();
+
         $recommendedFiles = File::query()
             ->select('files.*', \DB::raw('COUNT(log.id) as access_count'))
             ->join('file_access_logs as log', 'log.file_id', '=', 'files.id')
@@ -704,10 +731,150 @@ class FileController extends Controller
             ->get();
 
         return response()->json([
-            'last_opened_folders' => FileResource::collection($lastOpenedFolders),
-            'last_opened_files'   => FileResource::collection($lastOpenedFiles),
             'recommended_files'   => FileResource::collection($recommendedFiles),
         ]);
+    }
+
+    public function duplicate(DuplicateFileRequest $request)
+    {
+        try {
+            $data = $request->validated();
+            $originalFile = File::with('labels')->findOrFail($data['file_id']);
+
+            if (!$originalFile->isOwnedBy(Auth::id())) {
+                return response()->json([
+                    'message' => 'You can only duplicate files you own'
+                ], 403);
+            }
+
+            $parent = $originalFile->parent ?? $this->getRoot();
+            $user = Auth::user();
+
+            if ($originalFile->is_folder) {
+                $duplicatedFolder = $this->duplicateFolder($originalFile, $parent, $user);
+
+                return response()->json([
+                    'message' => 'Folder duplicated successfully',
+                    'file' => new FileResource($duplicatedFolder)
+                ], 201);
+            } else {
+                $duplicatedFile = $this->duplicateFile($originalFile, $parent, $user);
+
+                return response()->json([
+                    'message' => 'File duplicated successfully',
+                    'file' => new FileResource($duplicatedFile)
+                ], 201);
+            }
+        } catch (ModelNotFoundException $e) {
+            return response()->json(['message' => 'File not found'], 404);
+        } catch (Exception $e) {
+            Log::error("Failed to duplicate file: " . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to duplicate file',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function duplicateFile($originalFile, $parent, $user)
+    {
+        // Generate unique name with "Copy" suffix
+        $baseName = $originalFile->name;
+        $uniqueName = FileHelper::generateUniqueName(
+            $this->getCopyName($baseName),
+            $parent->id,
+            $user->id,
+            false
+        );
+
+        // Copy the physical file
+        $newStoragePath = null;
+        if ($originalFile->storage_path && Storage::disk('public')->exists($originalFile->storage_path)) {
+            $extension = pathinfo($originalFile->storage_path, PATHINFO_EXTENSION);
+            $newStoragePath = '/files/' . $user->id . '/' . Str::random(40) . '.' . $extension;
+
+            Storage::disk('public')->copy(
+                $originalFile->storage_path,
+                $newStoragePath
+            );
+        }
+
+        // Create new file record
+        $slugCandidate = str_replace('.', ' ', $uniqueName);
+        $slugCandidate = str_replace(['(', ')'], ' ', $slugCandidate);
+        $newPath = Str::slug($slugCandidate);
+
+        $duplicatedFile = new File();
+        $duplicatedFile->storage_path = $newStoragePath;
+        $duplicatedFile->is_folder = false;
+        $duplicatedFile->name = $uniqueName;
+        $duplicatedFile->path = $newPath;
+        $duplicatedFile->mime = $originalFile->mime;
+        $duplicatedFile->size = $originalFile->size;
+        $duplicatedFile->uploaded_on_cloud = 0;
+
+        $parent->appendNode($duplicatedFile);
+
+        // Copy labels
+        if ($originalFile->labels->isNotEmpty()) {
+            $duplicatedFile->labels()->sync($originalFile->labels->pluck('id'));
+        }
+
+        return $duplicatedFile->load('labels');
+    }
+
+    private function duplicateFolder($originalFolder, $parent, $user)
+    {
+        // Generate unique folder name
+        $uniqueName = FileHelper::generateUniqueName(
+            $this->getCopyName($originalFolder->name),
+            $parent->id,
+            $user->id,
+            true
+        );
+
+        // Create new folder
+        $duplicatedFolder = new File();
+        $duplicatedFolder->is_folder = true;
+        $duplicatedFolder->name = $uniqueName;
+        $duplicatedFolder->path = Str::slug($uniqueName);
+
+        $parent->appendNode($duplicatedFolder);
+
+        // Copy labels
+        if ($originalFolder->labels->isNotEmpty()) {
+            $duplicatedFolder->labels()->sync($originalFolder->labels->pluck('id'));
+        }
+
+        // Recursively duplicate children
+        $children = $originalFolder->children()->get();
+        foreach ($children as $child) {
+            if ($child->is_folder) {
+                $this->duplicateFolder($child, $duplicatedFolder, $user);
+            } else {
+                $this->duplicateFile($child, $duplicatedFolder, $user);
+            }
+        }
+
+        return $duplicatedFolder->fresh('labels');
+    }
+
+    private function getCopyName($originalName)
+    {
+        // If name already contains "Copy", increment the number
+        if (preg_match('/^(.*?)\s*\(Copy(\s+(\d+))?\)(\.[^.]+)?$/', $originalName, $matches)) {
+            $baseName = $matches[1];
+            $extension = $matches[4] ?? '';
+            $copyNumber = isset($matches[3]) ? (int)$matches[3] + 1 : 2;
+            return $baseName . " (Copy {$copyNumber})" . $extension;
+        }
+
+        // First copy
+        $pathInfo = pathinfo($originalName);
+        $nameWithoutExt = $pathInfo['filename'];
+        $extension = isset($pathInfo['extension']) ? '.' . $pathInfo['extension'] : '';
+
+        return $nameWithoutExt . " (Copy)" . $extension;
     }
 
 }
