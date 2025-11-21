@@ -229,7 +229,8 @@ class ShareController extends Controller
                         );
                     }
 
-                    $shareLink = "http://127.0.0.1:3000/share/{$shareRecord->token}";
+                    // $shareLink = "http://127.0.0.1:3000/share/{$shareRecord->token}";
+                    $shareLink = "https://dms-pdu-production.up.railway.app/share/{$shareRecord->token}";
 
                     Mail::to($targetUser->email)->send(
                         new FileSharedMail($file, $sharedBy, $targetUser, $shareLink)
@@ -292,8 +293,8 @@ class ShareController extends Controller
         $file_id = $share->file_id;
         $file = File::findOrFail($share->file_id);
 
-        // return redirect()->to("https://dms-pdu-production.up.railway.app/file-view/{$file_id}");
-        return redirect()->to("http://127.0.0.1:3000/file-view/{$file_id}");
+        return redirect()->to("https://dms-pdu-production.up.railway.app/file-view/{$file_id}");
+        // return redirect()->to("http://127.0.0.1:3000/file-view/{$file_id}");
     }
 
     public function viewFilePublic($token){
@@ -315,8 +316,8 @@ class ShareController extends Controller
 
             // return redirect()->to("http://127.0.0.1:8000/storage/$file_path");
             // return redirect()->to("http://pdu-dms.my.id/storage/{$file_path}");
-            // return redirect()->to("https://dms-pdu-production.up.railway.app/file-view/{$file_id}");
-            return redirect()->to("http://127.0.0.1:3000/file-view/{$file_id}");
+            return redirect()->to("https://dms-pdu-production.up.railway.app/file-view/{$file_id}");
+            // return redirect()->to("http://127.0.0.1:3000/file-view/{$file_id}");
 
         } catch (\Exception $e) {
             Log::error('ShareController@store failed: ' . $e->getMessage());
