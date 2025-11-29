@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Mail;
 use Laravel\Pail\ValueObjects\Origin\Console;
 use Ramsey\Uuid\Type\Integer;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Str;
 
 class ShareController extends Controller
