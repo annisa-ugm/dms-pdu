@@ -29,7 +29,7 @@ class LastOpenedController extends Controller
                 ->select('files.*', 'log.last_accessed_at');
 
             $query = $this->applyDmsFiltering($query, $request);
-            
+
             // primary sort: last opened first
             $query->orderBy('log.last_accessed_at', 'desc');
 
