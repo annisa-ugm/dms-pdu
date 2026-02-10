@@ -9,7 +9,7 @@ API Documentation: Available via Swagger UI at `/api/documentation` endpoint or 
 
 ERD Design Document: https://docs.google.com/document/d/1_2ADXiHTwBbrRRX5IpRVJLz5RsCCvBNCKuewI2BfELY/edit?usp=sharing
 ![ERD](screenshots/erd.png)
-*Entity Relation Diagram Design*
+*Entity Relationship Diagram Design*
 
 ## Frontend Interface
 
